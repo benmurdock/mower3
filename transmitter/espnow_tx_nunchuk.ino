@@ -120,15 +120,20 @@ const unsigned char *data = wii_i2c_read_state();
      else {
     wii_i2c_nunchuk_state state;
     wii_i2c_decode_nunchuk(data, &state);
+      //by default, send nothing
+      myData.wL_rps_cmd=0;
+      myData.wR_rps_cmd=0;
+      myData.blade_rps_cmd=0;
+
+      //if c is pressed, allow values to be transmitted
+      if (int(state.c)){
       myData.wL_rps_cmd=float(state.x/128.0*wheel_rps);
       myData.wR_rps_cmd=float(state.y/128.0*wheel_rps);
       myData.blade_rps_cmd=float(state.z*blade_rps);
-      Serial.print("blade_rps = ");
-      Serial.println(blade_rps);
-      Serial.print("blade_rps_cmd = ");
-      Serial.println(float(state.z*blade_rps));
-
+  
 }
+}
+
      
  //////////////
 ////ESPNOW
