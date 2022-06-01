@@ -42,6 +42,10 @@ void loop()
           y='0'+y;}
         String msg = x+y+c+z;
        Serial.println(msg);
+
+       char copy[7];
+       msg.toCharArray(copy,7);
+       Serial.println(msg);
     
   }
   delay(10);
