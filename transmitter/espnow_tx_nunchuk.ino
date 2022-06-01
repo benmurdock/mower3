@@ -8,6 +8,10 @@
   The above copyright notice and this permission notice shall be included in all
   copies or substantial portions of the Software.
 */
+
+
+
+
 //////////////
 ////ESP NOW
 /////////////
@@ -17,9 +21,9 @@ uint8_t broadcastAddress[] = {0x30, 0xc6, 0xf7, 0x05, 0x80, 0xa4};//receiver MAC
 
 // Structure to send data
 typedef struct struct_message {
-    int wL_rps_cmd;
-    int wR_rps_cmd;
-    int blade_rps_cmd;
+    float wL_rps_cmd;
+    float wR_rps_cmd;
+    float blade_rps_cmd;
 } struct_message;
 
 // Create a struct_message called myData
@@ -87,7 +91,25 @@ void setup() {
 }
  
 void loop() {
-int output;
+//int output;
+///////////////
+///// Mower
+///////////////
+
+//target values
+float groundspeed_fpm = 100.0; //225 should give wheel rps of 1
+float tipspeed_fpm = 11080.0;
+
+
+//convert target values to odrive command values
+float wheel_circum_ft=45.0/12.0; //45 inches, measured
+float gearbox_ratio=20.0;
+float wheel_rps = groundspeed_fpm*(1.0/60.0)*(1.0/wheel_circum_ft) *gearbox_ratio;
+float blade_circum_ft=3.14*(17.0/12.0); //diam is 17 inches
+float blade_rps = tipspeed_fpm*(1.0/60.0)*(1.0/blade_circum_ft) ;
+
+
+
 //////////////
 ////NUCNCHUK
 /////////////
@@ -98,9 +120,14 @@ const unsigned char *data = wii_i2c_read_state();
      else {
     wii_i2c_nunchuk_state state;
     wii_i2c_decode_nunchuk(data, &state);
-      myData.wL_rps_cmd=int(state.x);
-      myData.wR_rps_cmd=int(state.y);
-      myData.blade_rps_cmd=int(state.z);
+      myData.wL_rps_cmd=float(state.x/128.0*wheel_rps);
+      myData.wR_rps_cmd=float(state.y/128.0*wheel_rps);
+      myData.blade_rps_cmd=float(state.z*blade_rps);
+      Serial.print("blade_rps = ");
+      Serial.println(blade_rps);
+      Serial.print("blade_rps_cmd = ");
+      Serial.println(float(state.z*blade_rps));
+
 }
      
  //////////////
