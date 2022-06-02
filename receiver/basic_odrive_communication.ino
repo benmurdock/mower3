@@ -9,24 +9,57 @@
 ///////////////From herer https://discourse.odriverobotics.com/t/esp32-odrive-communication-solved/3422/4
 /////////////////////////
 
+//////
+//esp now
+///////
+
+#include <esp_now.h>
+#include <WiFi.h>
+
+// Structure example to receive data
+// Must match the sender structure
+typedef struct struct_message {
+    float wL_rps_cmd;
+    float wR_rps_cmd;
+    float blade_rps_cmd;
+    
+} struct_message;
+
+// Create a struct_message called myData
+struct_message myData;
+
+// callback function that will be executed when data is received
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&myData, incomingData, sizeof(myData));
+ 
+  Serial.print(myData.wL_rps_cmd);
+  Serial.print(" , ");
+  Serial.print(myData.wR_rps_cmd);
+  Serial.print(" , ");
+  Serial.println(myData.blade_rps_cmd);
+      
+      ///this is where I will make a call to some function to set speeds
+  set_blade_vel(float(myData.blade_rps_cmd));
+  set_wheel_vel(float(myData.wL_rps_cmd) , float(myData.wR_rps_cmd));
+
+}
+
+
+
+
+//////////
+///odrive
+/////
 #include <ODriveArduino.h>
-
-// ## I have not tried it yet, but if you need another serial: UART1, redefine pins (see video link above)
-//#define ESP32_UART2_PIN_TX 17//og
-//#define ESP32_UART2_PIN_RX 16//og
-
-#define ESP32_UART2_PIN_TX 17 //I added
-#define ESP32_UART2_PIN_RX 16 //I added
-
-#define ESP32_UART_Bonus_PIN_TX 4 //I added
-#define ESP32_UART_Bonus_PIN_RX 2 //I added
-// ODrive uses 115200 baud
-#define BAUDRATE 115200
+#define ESP32_UART2_PIN_TX 17
+#define ESP32_UART2_PIN_RX 16 
+#define ESP32_UART_Bonus_PIN_TX 4
+#define ESP32_UART_Bonus_PIN_RX 2
+#define BAUDRATE 115200 // ODrive uses 115200 baud
 
 // Printing with stream operator
 template<class T> inline Print& operator <<(Print &obj,     T arg) { obj.print(arg);    return obj; }
 template<>        inline Print& operator <<(Print &obj, float arg) { obj.print(arg, 4); return obj; }
-
 
 // ODrive object //HardwareSerial Serial1;
 ODriveArduino odrive_blades(Serial1);
@@ -35,131 +68,82 @@ float vel_limit = 22000.0f;
 float current_lim = 11.0f;
 
 void setup() {
+
+  //////
+//esp now
+///////
+  // Initialize Serial Monitor
+  Serial.begin(115200);
+  
+  // Set device as a Wi-Fi Station
+  WiFi.mode(WIFI_STA);
+
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  
+  // Once ESPNow is successfully Init, we will register for recv CB to
+  // get recv packer info
+  esp_now_register_recv_cb(OnDataRecv);
+//////////
+///odrive
+/////
   
   // Serial to PC
-  Serial.begin(BAUDRATE); 
+  //Serial.begin(BAUDRATE); //already done from espnow section
   
-  // Serial to the ODrive //UART HWSerial 1 Setup
-  // Note: you must also connect GND on ODrive to GND on ESP32!
+  // Set up 2 additional serial channels to the odrive boards
   Serial1.begin(BAUDRATE, SERIAL_8N1, ESP32_UART2_PIN_TX, ESP32_UART2_PIN_RX);
-  // ## You should be able to setup another serial for more motors
   Serial2.begin(BAUDRATE, SERIAL_8N1, ESP32_UART_Bonus_PIN_TX, ESP32_UART_Bonus_PIN_RX);
   
   while (!Serial) ;  // wait for Arduino Serial 0 Monitor to open
-  Serial.println("Serial 0 Ready...");
   while (!Serial1) ; // wait for Arduino Serial 1 
-  Serial.println("Serial 1 Ready...");
-  // ## You should be able to setup another serial for more motors
   
+// Calibrate axes and set to move
+  //delay(3000); //give me a chance to lift wheels before calibration
+  set_state_allMotors(AXIS_STATE_MOTOR_CALIBRATION , true);
+  set_state_allMotors(AXIS_STATE_ENCODER_OFFSET_CALIBRATION , true);
+  set_state_allMotors(AXIS_STATE_CLOSED_LOOP_CONTROL , false);
 
-//  ODriveArduino odrive(Serial1);
-// Set current and velocity defaults
-  for (int axis = 0; axis < 2; ++axis) {
-    Serial1 << "w axis" << axis << ".controller.config.vel_limit " << vel_limit << '\n';
-    Serial1 << "w axis" << axis << ".motor.config.current_lim " << current_lim << '\n';
-  }
-
-// Some serial out documentation
-  Serial.println("Ready!");
-  Serial.println("Send the character '0' or '1' to calibrate respective motor (you must do this before you can command movement)");
-  Serial.println("Send the character 's' to exectue test move");
-  Serial.println("Send the character 'b' to read bus voltage");
-  Serial.println("Send the character 'p' to read motor positions in a 10s loop");
-  Serial.println("Send the character 'c'(-) or 'C'(+) to raise and lower the current_limit (+- 5)");
-  Serial.println("Send the character 'v'(-) or 'V'(+) to raise and lower the velocity_limit (+- 50000)");
-  Serial.println("Send the character 'x'(-) or 'X'(+) to switch back and forth to position (+- 5000)");
+//enable watchdog and enter main loop
+enable_all_watchdogs();
 }
 
-// This is the same as the ODriveArduinoTest
 void loop() {
+  
+}
 
-  if (Serial.available()) {
-    char c = Serial.read();
-    Serial.println((String)" Serial.Read(): " + c  );
-    
-    // Run calibration sequence
-    if (c == '0' || c == '1') {
-      int motornum = 0;
-      if(c=='1') motornum = 1;
-      int requested_state;
+void set_state_allMotors(int requested_state, bool shouldWait){
+      Serial << "Requesting all motor calibration" << '\n';
+        odrive_wheels.run_state(0, requested_state, false);
+                delay(50);
+        odrive_wheels.run_state(1, requested_state, false);
+                delay(50);
+        odrive_blades.run_state(0, requested_state, false);
+                delay(50);
+        odrive_blades.run_state(1, requested_state, shouldWait);
+}
 
-//      requested_state = AXIS_STATE_MOTOR_CALIBRATION;
-      requested_state = 3;
+void set_blade_vel(int blade_RPS){
+      Serial << "Commanding Blade Spin" << '\n';
+        
+        odrive_blades.SetVelocity(0, blade_RPS);
+                delay(50);
+        odrive_blades.SetVelocity(1, blade_RPS);
+}
+void set_wheel_vel(float leftWheel_RPS,float rightWheel_RPS){
+      Serial << "Commanding Wheel Spin" << '\n';
+        
+        odrive_wheels.SetVelocity(0, leftWheel_RPS);
+        odrive_wheels.SetVelocity(1, rightWheel_RPS);
+}
 
-      Serial << "Axis" << c << ": Requesting state " << requested_state << '\n';
-      odrive_wheels.run_state(motornum, requested_state, true);
 
-//      requested_state = AXIS_STATE_ENCODER_OFFSET_CALIBRATION;
-//      Serial << "Axis" << c << ": Requesting state " << requested_state << '\n';
-//      odrive_blades.run_state(motornum, requested_state, true);
-
-      requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL;
-      Serial << "Axis" << c << ": Requesting state " << requested_state << '\n';
-      odrive_blades.run_state(motornum, requested_state, false); // don't wait
-    }
-
-   // Change Velocity incrementally
-    if (c == 'V' || c == 'v'){
-      float inc = 50000.0f;
-      if(c=='v') inc *= -1;
-      vel_limit += inc;
-      Serial.println((String)"Velocity Limit: " + vel_limit);
-      for (int axis = 0; axis < 2; ++axis) {
-        Serial1 << "w axis" << axis << ".controller.config.vel_limit " << vel_limit << '\n';
-      }
-    }
-
-   // Change Current incrementally
-    if (c == 'C' || c == 'c'){
-      float inc = 5.0f;
-      if(c=='c') inc *= -1;
-      current_lim += inc;
-       Serial.println((String)"Current Limit: " + current_lim);
-      for (int axis = 0; axis < 2; ++axis) {
-        Serial1 << "w axis" << axis << ".motor.config.current_lim " << current_lim << '\n';
-      }
-    }
-    
-   // Change Positions: Flips position back and forth between + and - value
-    if (c == 'X' || c == 'x'){
-      int pos = 5000;
-      if(c=='x') pos *= -1;
-      Serial.println((String)"Position: " + pos);
-        odrive_blades.SetPosition(0, -pos);
-        odrive_blades.SetPosition(1, pos);
-      
-    }
-    // Sinusoidal test move
-    if (c == 's') {
-      Serial.println("Executing test move");
-      for (float ph = 0.0f; ph < 6.28318530718f; ph += 0.01f) {
-        float pos_m0 = 20000.0f * cos(ph);
-        float pos_m1 = 20000.0f * sin(ph);
-        odrive_blades.SetPosition(0, pos_m0);
-        odrive_blades.SetPosition(1, pos_m1);
-        delay(5);
-      }
-    }
-
-    // Read bus voltage
-    if (c == 'b') {
-      //odrive_serial << "r vbus_voltage\n";
-      Serial1 << "r vbus_voltage\n";
-      Serial << "Vbus voltage: " << odrive_blades.readFloat() << '\n';
-    }
-
-    // print motor positions in a 10s loop
-    if (c == 'p') {
-      static const unsigned long duration = 10000;
-      unsigned long start = millis();
-      while(millis() - start < duration) {
-        for (int motor = 0; motor < 2; ++motor) {
-          //odrive_serial << "r axis" << motor << ".encoder.pos_estimate\n";
-          Serial1 << "r axis" << motor << ".encoder.pos_estimate\n";
-          Serial << odrive_blades.readFloat() << '\t';
-        }
-        Serial << '\n';
-      }
-    }
-  }
+void enable_all_watchdogs(){
+  odrive_blades.EnableWatchdog(0,.10,true);
+  odrive_blades.EnableWatchdog(1,.10,true);
+  odrive_wheels.EnableWatchdog(0,.10,true);
+  odrive_wheels.EnableWatchdog(1,.10,true);
 }
