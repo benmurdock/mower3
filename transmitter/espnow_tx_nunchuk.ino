@@ -125,13 +125,24 @@ const unsigned char *data = wii_i2c_read_state();
       myData.wR_rps_cmd=0;
       myData.blade_rps_cmd=0;
 
+      //convert to tank drive (forward is x axis, not y)
+      float x_in = float(state.y)/128;
+      float y_in = float(state.x)/128*-1;
+      float v = (1 - abs(x_in)) * y_in + y_in;
+      float w = (1 - abs(y_in)) * x_in + x_in;
+      float r = (v + w) / 2;
+      float l = (v - w) / 2;
+      
+           //return [l, -r]
+      
       //if c is pressed, allow values to be transmitted
-      if (int(state.c)){
-      myData.wL_rps_cmd=float(state.x/128.0*wheel_rps);
-      myData.wR_rps_cmd=float(state.y/128.0*wheel_rps);
+      if (int(state.c)) {
+      myData.wL_rps_cmd=l * wheel_rps;
+      myData.wR_rps_cmd=r * wheel_rps;
       myData.blade_rps_cmd=float(state.z*blade_rps);
-  
 }
+      Serial.println(myData.wL_rps_cmd);
+      Serial.println(myData.wR_rps_cmd);
 }
 
      
@@ -148,5 +159,5 @@ const unsigned char *data = wii_i2c_read_state();
   else {
     Serial.println("Error sending the data");
   }
-  delay(50);
+  delay(10);
 }
