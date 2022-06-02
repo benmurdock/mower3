@@ -8,7 +8,9 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 ///////////////From herer https://discourse.odriverobotics.com/t/esp32-odrive-communication-solved/3422/4
 /////////////////////////
-
+unsigned long t0;//timer for checking message delay
+unsigned long max_allowable_delay=2000;
+String watchdog_status ="Doggie is fine";
 //////
 //esp now
 ///////
@@ -37,7 +39,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   Serial.print(myData.wR_rps_cmd);
   Serial.print(" , ");
   Serial.println(myData.blade_rps_cmd);
-      
+  t0=millis(); //reset local watchdog    
       ///this is where I will make a call to some function to set speeds
   set_blade_vel(float(myData.blade_rps_cmd));
   set_wheel_vel(float(myData.wL_rps_cmd) , float(myData.wR_rps_cmd));
@@ -109,10 +111,17 @@ void setup() {
 
 //enable watchdog and enter main loop
 enable_all_watchdogs();
+t0=millis();
 }
 
 void loop() {
-  
+  if(millis()-t0>max_allowable_delay){
+    watchdog_status ="Doggie is MAD! - shutdown requested";
+    set_blade_vel(0);
+    set_wheel_vel(0,0);
+  }
+  Serial.println(millis()-t0);
+  Serial.println(watchdog_status);
 }
 
 void set_state_allMotors(int requested_state, bool shouldWait){
