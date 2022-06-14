@@ -104,13 +104,15 @@ void setup() {
   while (!Serial1) ; // wait for Arduino Serial 1 
   
 // Calibrate axes and set to move
-  //delay(3000); //give me a chance to lift wheels before calibration
-  set_state_allMotors(AXIS_STATE_MOTOR_CALIBRATION , true);
-  set_state_allMotors(AXIS_STATE_ENCODER_OFFSET_CALIBRATION , true);
+  delay(100); //give me a chance to lift wheels before calibration
+  //set_state_allMotors(AXIS_STATE_MOTOR_CALIBRATION , true);
+  set_state_allMotors(AXIS_STATE_FULL_CALIBRATION_SEQUENCE , true);
+                  delay(15000);
+
   set_state_allMotors(AXIS_STATE_CLOSED_LOOP_CONTROL , false);
 
 //enable watchdog and enter main loop
-enable_all_watchdogs();
+//enable_all_watchdogs(); //OI want this, but it doesn't work yet
 t0=millis();
 }
 
@@ -120,12 +122,13 @@ void loop() {
     set_blade_vel(0);
     set_wheel_vel(0,0);
   }
-  Serial.println(millis()-t0);
-  Serial.println(watchdog_status);
+  //Serial.println(millis()-t0);
+  //Serial.println(watchdog_status);
 }
 
 void set_state_allMotors(int requested_state, bool shouldWait){
       Serial << "Requesting all motor calibration" << '\n';
+        delay(50);
         odrive_wheels.run_state(0, requested_state, false);
                 delay(50);
         odrive_wheels.run_state(1, requested_state, false);
@@ -139,7 +142,7 @@ void set_blade_vel(int blade_RPS){
       Serial << "Commanding Blade Spin" << '\n';
         
         odrive_blades.SetVelocity(0, blade_RPS);
-                delay(50);
+                //delay(50);//used when working but removed for speed?
         odrive_blades.SetVelocity(1, blade_RPS);
 }
 void set_wheel_vel(float leftWheel_RPS,float rightWheel_RPS){
