@@ -9,9 +9,6 @@
   copies or substantial portions of the Software.
 */
 
-
-
-
 //////////////
 ////ESP NOW
 /////////////
@@ -97,9 +94,9 @@ void loop() {
 ///////////////
 
 //target values
-float groundspeed_fpm = 100.0; //225 should give wheel rps of 1
-float tipspeed_fpm = 11080.0;
-
+float groundspeed_fpm = 175.0; //225 should give wheel rps of 1
+float tipspeed_fpm = 14000.0;
+float steering_sensitivity = .75;// scale values from x axis
 
 //convert target values to odrive command values
 float wheel_circum_ft=45.0/12.0; //45 inches, measured
@@ -116,7 +113,13 @@ float blade_rps = tipspeed_fpm*(1.0/60.0)*(1.0/blade_circum_ft) ;
 const unsigned char *data = wii_i2c_read_state();
   wii_i2c_request_state();
   
-  if (! data) {Serial.println("no data available :(");} 
+  if (! data) {
+    Serial.println("no data available :(");
+    Serial.println("maybe nunchuk is disconnected...");
+    myData.wL_rps_cmd=0;
+      myData.wR_rps_cmd=0;
+      myData.blade_rps_cmd=0;
+      } 
      else {
     wii_i2c_nunchuk_state state;
     wii_i2c_decode_nunchuk(data, &state);
@@ -127,7 +130,7 @@ const unsigned char *data = wii_i2c_read_state();
 
       //convert to tank drive (forward is x axis, not y)
       float x_in = float(state.y)/128;
-      float y_in = float(state.x)/128*-1;
+      float y_in = float(state.x * steering_sensitivity)/128*-1;
       float v = (1 - abs(x_in)) * y_in + y_in;
       float w = (1 - abs(y_in)) * x_in + x_in;
       float r = (v + w) / 2;
@@ -141,8 +144,7 @@ const unsigned char *data = wii_i2c_read_state();
       myData.wR_rps_cmd=r * wheel_rps;
       myData.blade_rps_cmd=float(state.z*blade_rps);
 }
-      Serial.println(myData.wL_rps_cmd);
-      Serial.println(myData.wR_rps_cmd);
+     
 }
 
      
@@ -151,7 +153,11 @@ const unsigned char *data = wii_i2c_read_state();
 /////////////
  // Send message via ESP-NOW
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
-   
+      Serial.print(myData.wL_rps_cmd);
+      Serial.print(" - ");
+      Serial.print(myData.wR_rps_cmd);
+      Serial.print(" - ");
+      Serial.println(myData.blade_rps_cmd);
   if (result == ESP_OK) {
     Serial.println("Sent with success");
 
@@ -159,5 +165,5 @@ const unsigned char *data = wii_i2c_read_state();
   else {
     Serial.println("Error sending the data");
   }
-  delay(10);
+  delay(500); //used when working but removed for speed?
 }
