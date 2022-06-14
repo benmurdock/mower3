@@ -165,5 +165,5 @@ const unsigned char *data = wii_i2c_read_state();
   else {
     Serial.println("Error sending the data");
   }
-  delay(500); //used when working but removed for speed?
+  //delay(500); //used when working but removed for speed?
 }
