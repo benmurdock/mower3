@@ -8,9 +8,8 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 ///////////////From herer https://discourse.odriverobotics.com/t/esp32-odrive-communication-solved/3422/4
 /////////////////////////
-unsigned long t0;//timer for checking message delay
-unsigned long max_allowable_delay=2000;
-String watchdog_status ="Doggie is fine";
+
+
 //////
 //esp now
 ///////
@@ -23,30 +22,9 @@ String watchdog_status ="Doggie is fine";
 typedef struct struct_message {
     float wL_rps_cmd;
     float wR_rps_cmd;
-    float blade_rps_cmd;
-    
+    float blade_rps_cmd;  
 } struct_message;
-
-// Create a struct_message called myData
 struct_message myData;
-
-// callback function that will be executed when data is received
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  memcpy(&myData, incomingData, sizeof(myData));
- 
-  Serial.print(myData.wL_rps_cmd);
-  Serial.print(" , ");
-  Serial.print(myData.wR_rps_cmd);
-  Serial.print(" , ");
-  Serial.println(myData.blade_rps_cmd);
-  t0=millis(); //reset local watchdog    
-      ///this is where I will make a call to some function to set speeds
-  set_blade_vel(float(myData.blade_rps_cmd));
-  set_wheel_vel(float(myData.wL_rps_cmd) , float(myData.wR_rps_cmd));
-
-}
-
-
 
 
 //////////
@@ -62,100 +40,93 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
 // Printing with stream operator
 template<class T> inline Print& operator <<(Print &obj,     T arg) { obj.print(arg);    return obj; }
 template<>        inline Print& operator <<(Print &obj, float arg) { obj.print(arg, 4); return obj; }
-
-// ODrive object //HardwareSerial Serial1;
 ODriveArduino odrive_blades(Serial1);
 ODriveArduino odrive_wheels(Serial2);
-float vel_limit = 22000.0f;
-float current_lim = 11.0f;
-
+unsigned long t0;//timer for checking message delay
+unsigned long max_allowable_delay=500;
+bool watchdog_flag=false;
 void setup() {
 
   //////
 //esp now
 ///////
-  // Initialize Serial Monitor
-  Serial.begin(115200);
-  
-  // Set device as a Wi-Fi Station
-  WiFi.mode(WIFI_STA);
 
-  // Init ESP-NOW
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
-  
-  // Once ESPNow is successfully Init, we will register for recv CB to
-  // get recv packer info
   esp_now_register_recv_cb(OnDataRecv);
+  
 //////////
 ///odrive
 /////
-  
-  // Serial to PC
-  //Serial.begin(BAUDRATE); //already done from espnow section
-  
+
   // Set up 2 additional serial channels to the odrive boards
   Serial1.begin(BAUDRATE, SERIAL_8N1, ESP32_UART2_PIN_TX, ESP32_UART2_PIN_RX);
   Serial2.begin(BAUDRATE, SERIAL_8N1, ESP32_UART_Bonus_PIN_TX, ESP32_UART_Bonus_PIN_RX);
-  
   while (!Serial) ;  // wait for Arduino Serial 0 Monitor to open
   while (!Serial1) ; // wait for Arduino Serial 1 
+  while (!Serial2) ; // wait for Arduino Serial 2 
   
-// Calibrate axes and set to move
-  delay(100); //give me a chance to lift wheels before calibration
-  //set_state_allMotors(AXIS_STATE_MOTOR_CALIBRATION , true);
+  // Calibrate axes and set to move
   set_state_allMotors(AXIS_STATE_FULL_CALIBRATION_SEQUENCE , true);
-                  delay(15000);
-
+  delay(15000);
   set_state_allMotors(AXIS_STATE_CLOSED_LOOP_CONTROL , false);
+  t0=millis();
+  
+}//end void setup()
 
-//enable watchdog and enter main loop
-//enable_all_watchdogs(); //OI want this, but it doesn't work yet
-t0=millis();
-}
-
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////        MAIN LOOP       ////////////////////////////////////////////
 void loop() {
   if(millis()-t0>max_allowable_delay){
-    watchdog_status ="Doggie is MAD! - shutdown requested";
+    enable_all_watchdogs(false);
+    watchdog_flag=false;
     set_blade_vel(0);
     set_wheel_vel(0,0);
   }
-  //Serial.println(millis()-t0);
-  //Serial.println(watchdog_status);
-}
 
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////        FXNS FOR ODRIVE COMMS       ////////////////////////////////////////////
 void set_state_allMotors(int requested_state, bool shouldWait){
       Serial << "Requesting all motor calibration" << '\n';
-        delay(50);
         odrive_wheels.run_state(0, requested_state, false);
-                delay(50);
         odrive_wheels.run_state(1, requested_state, false);
-                delay(50);
         odrive_blades.run_state(0, requested_state, false);
-                delay(50);
-        odrive_blades.run_state(1, requested_state, shouldWait);
-}
+        odrive_blades.run_state(1, requested_state, shouldWait);}
 
 void set_blade_vel(int blade_RPS){
       Serial << "Commanding Blade Spin" << '\n';
-        
         odrive_blades.SetVelocity(0, blade_RPS);
-                //delay(50);//used when working but removed for speed?
-        odrive_blades.SetVelocity(1, blade_RPS);
-}
+        odrive_blades.SetVelocity(1, blade_RPS);}
+
 void set_wheel_vel(float leftWheel_RPS,float rightWheel_RPS){
       Serial << "Commanding Wheel Spin" << '\n';
-        
         odrive_wheels.SetVelocity(0, leftWheel_RPS);
-        odrive_wheels.SetVelocity(1, rightWheel_RPS);
-}
+        odrive_wheels.SetVelocity(1, rightWheel_RPS);}
 
+void enable_all_watchdogs(bool should_enable){
+      odrive_blades.EnableWatchdog(0,should_enable);
+      odrive_blades.EnableWatchdog(1,should_enable);
+      odrive_wheels.EnableWatchdog(0,should_enable);
+      odrive_wheels.EnableWatchdog(1,should_enable);}
 
-void enable_all_watchdogs(){
-  odrive_blades.EnableWatchdog(0,.10,true);
-  odrive_blades.EnableWatchdog(1,.10,true);
-  odrive_wheels.EnableWatchdog(0,.10,true);
-  odrive_wheels.EnableWatchdog(1,.10,true);
-}
+void clear_axis_errors(){
+      odrive_blades.ClearAxisError(0);
+      odrive_blades.ClearAxisError(1);
+      odrive_wheels.ClearAxisError(0);
+      odrive_wheels.ClearAxisError(1);}
+
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+      memcpy(&myData, incomingData, sizeof(myData)); //dunno what this does
+      t0=millis(); //reset local watchdog    
+      if (watchdog_flag==false){
+        watchdog_flag=true;
+      enable_all_watchdogs(true);}
+
+      
+      set_blade_vel(float(myData.blade_rps_cmd));
+      set_wheel_vel(float(myData.wL_rps_cmd) , float(myData.wR_rps_cmd));}
